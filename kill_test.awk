@@ -49,5 +49,6 @@ BEGIN {
 	kill(pid, "WINCH");	system("sleep " time)
 	kill(pid, "UNUSED");	system("sleep " time)
 
+	kill(pid, "STOP");	system("sleep " time)
 	kill(pid, "KILL");	system("sleep " time)
 }

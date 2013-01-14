@@ -1,38 +1,37 @@
-//#include <stdio.h>
-//#include <stdlib.h>
-
-
-#if defined NO_POSIX_1_2001
+#ifdef NO_POSIX_1_2001
 #endif
 
 #include <signal.h>
-// #include <string.h>
-// #include "gawk-4.0.1/awk.h"
+#include <unistd.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "awk.h"
 
 
 int plugin_is_GPL_compatible;
 
 
-#define SIG_NUM		128
-static NODE *user_handler[SIG_NUM];
-static struct sigaction sig_act[SIG_NUM];
+static NODE *user_handler[NSIG];
+static struct sigaction sig_act[NSIG];
 
 
 static INSTRUCTION *code;
 
 static void
-handler(int sig)
+handler(int signo)
 {
 	AWKNUM ret;
 	extern int currule;
 	extern int exiting;
 
-	code->func_body = user_handler[sig];
-	(code + 1)->expr_count = 0;	/* function takes no argument */
+	code->func_body = user_handler[signo];
+	(code + 1)->expr_count = 1;	/* function takes one argument */
 
 #ifdef DBG
-	printf("%d %p\n",sig,code->func_body);
+	printf("%d %p\n", signo, code->func_body);
 #endif
 
 	/* make non-local jumps `next' and `nextfile' fatal in
@@ -42,6 +41,8 @@ handler(int sig)
 
 	(code + 1)->inrule = currule;	/* save current rule */
 	currule = 0;
+
+	PUSH(make_number((AWKNUM) signo));
 
 	interpret(code);
 	if (exiting)	/* do not assume anything about the user-defined function! */
@@ -53,11 +54,23 @@ handler(int sig)
 	return;
 }
 
+#if 0
+// void (*sa_sigaction)(int, siginfo_t *, void *);
+void *
+action(int signo, siginfo_t *siginfo, void *context)
+{
+	return NULL;
+}
+#endif
 
-int
+static int
 str2sig(const char *str)
 {
 	int sig = 0;
+
+	if (strncmp(str, "SIG", 3) == 0) {
+		str += 3;
+	}
 
 	if (strcmp(str, "HUP") == 0) {
 		sig = SIGHUP;
@@ -140,58 +153,58 @@ str2sig(const char *str)
 	return sig;
 }
 
-int
+static int
 num2sig(int num)
 {
 	int sig = 0;
 
 	switch (num) {
-		case SIGHUP:
-		case SIGINT:
-		case SIGQUIT:
-		case SIGILL:
-		case SIGABRT:
-		case SIGFPE:
-		case SIGKILL:
-		case SIGSEGV:
-		case SIGPIPE:
-		case SIGALRM:
-		case SIGTERM:
-		case SIGUSR1:
-		case SIGUSR2:
-		case SIGCHLD:
-		case SIGCONT:
-		case SIGSTOP:
-		case SIGTSTP:
-		case SIGTTIN:
-		case SIGTTOU:
-		case SIGBUS:
-		case SIGPOLL:
-		case SIGPROF:
-		case SIGSYS:
-		case SIGTRAP:
-		case SIGURG:
-		case SIGVTALRM:
-		case SIGXCPU:
-		case SIGXFSZ:
-		//?case SIGIOT:
-		//case SIGEMT:
-		case SIGSTKFLT:
-		//?case SIGIO:
-		//?case SIGCLD:
-		case SIGPWR:
-		//case SIGINFO:
-		//case SIGLOST:
-		case SIGWINCH:
-		//?case SIGUNUSED:
-			sig = num;
+	case SIGHUP:
+	case SIGINT:
+	case SIGQUIT:
+	case SIGILL:
+	case SIGABRT:
+	case SIGFPE:
+	case SIGKILL:
+	case SIGSEGV:
+	case SIGPIPE:
+	case SIGALRM:
+	case SIGTERM:
+	case SIGUSR1:
+	case SIGUSR2:
+	case SIGCHLD:
+	case SIGCONT:
+	case SIGSTOP:
+	case SIGTSTP:
+	case SIGTTIN:
+	case SIGTTOU:
+	case SIGBUS:
+	case SIGPOLL:
+	case SIGPROF:
+	case SIGSYS:
+	case SIGTRAP:
+	case SIGURG:
+	case SIGVTALRM:
+	case SIGXCPU:
+	case SIGXFSZ:
+	//?case SIGIOT:
+	//case SIGEMT:
+	case SIGSTKFLT:
+	//?case SIGIO:
+	//?case SIGCLD:
+	case SIGPWR:
+	//case SIGINFO:
+	//case SIGLOST:
+	case SIGWINCH:
+	//?case SIGUNUSED:
+		sig = num;
 	}
 
 	return sig;
 }
 
-int
-get_sig(NODE *tmp)
+static int
+get_signo(NODE *tmp)
 {
 	int sig;
 
@@ -221,7 +234,7 @@ kill_killpg(int (*func)(int, int))
 	pid_prg = (pid_t) force_number(tmp);
 
 	tmp = (NODE *) get_scalar_argument(1, FALSE);
-	sig = get_sig(tmp);
+	sig = get_signo(tmp);
 
 	return make_number((AWKNUM) func(pid_prg, sig));
 }
@@ -254,7 +267,7 @@ do_raise(int nargs)
 		lintwarn("raise: called with too many arguments");
 
 	tmp = (NODE *) get_scalar_argument(0, FALSE);
-	sig = get_sig(tmp);
+	sig = get_signo(tmp);
 
 	return make_number((AWKNUM) raise(sig));
 }
@@ -263,34 +276,53 @@ static NODE *
 do_sigact(int nargs)
 {
 	NODE *tmp;
+	const char *str;
 	int sig;
 	NODE *fnc_ptr;
-	struct sigaction *saptr;
 
 	if (do_lint && get_curfunc_arg_count() > 2)
 		lintwarn("sigact: called with too many arguments");
 
 	tmp = (NODE *) get_scalar_argument(0, FALSE);
-	sig = get_sig(tmp);
+	sig = get_signo(tmp);
 
 	tmp = (NODE *) get_scalar_argument(1, FALSE);
 	force_string(tmp);
+	str = tmp->stptr;
 
-	fnc_ptr = lookup(tmp->stptr);
+	if (str[0] == '@') {
+		str++;	/* advance '@' */
+		if (strncmp(str, "SIG", 3) == 0) {
+			str += 3;
+		}
+		if (strncmp(str, "_", 1) == 0) {
+			str += 1;
+		}
+
+		if (strcmp(str, "DFL") == 0) {
+			fnc_ptr = SIG_DFL;
+		} else if (strcmp(str, "IGN") == 0) {
+			fnc_ptr = SIG_IGN;
+		} else {
+			fnc_ptr = NULL;
+		}
+	} else {
+		fnc_ptr = lookup(str);
+	}
+
 	if (fnc_ptr == NULL || fnc_ptr->type != Node_func)
 		fatal(_("Callback function `%s' is not defined"), tmp->stptr);
 
 	user_handler[sig] = fnc_ptr;
 
-	saptr = &sig_act[sig];
-	saptr->sa_handler = handler;
-	saptr->sa_flags |= SA_RESTART;    /* システムコールが中止しない */
+	sig_act[sig].sa_handler = handler;
+	sig_act[sig].sa_flags |= SA_RESTART;    /* システムコールが中止しない */
 
 #ifdef DBG
-//printf("%d %p\n",sig,fnc_ptr);
+	printf("%d %p\n", sig, fnc_ptr);
 #endif
 
-	return make_number((AWKNUM) sigaction(sig, saptr, NULL));
+	return make_number((AWKNUM) sigaction(sig, &sig_act[sig], NULL));
 }
 
 static NODE *
@@ -298,6 +330,8 @@ do_sigaction(int nargs)
 {
 	if (do_lint && get_curfunc_arg_count() > 4)
 		lintwarn("sigaction: called with too many arguments");
+
+	// TODO
 
 	return make_number((AWKNUM) pause());
 }
@@ -318,18 +352,33 @@ dlload(NODE *tree, void *dl)
 
 	make_builtin("kill", do_kill, 2);
 	make_builtin("killpg", do_killpg, 2);
+	//make_builtin("tgkill", do_tgkill, _);
 	make_builtin("raise", do_raise, 1);
+
 	make_builtin("sigact", do_sigact, 2);
 	make_builtin("sigaction", do_sigaction, 4);
-	make_builtin("pause", do_pause, 4);
+
+	//make_builtin("sigaddset", do_sigaddset, _);
+	//make_builtin("sigdelset", do_sigdelset, _);
+	//make_builtin("sigismember", do_ismember, _);
+	//make_builtin("sigfillset", do_sigfillset, _);
+	//make_builtin("sigemptyset", do_sigemptyset, _);
+
+	//make_builtin("sigprocmask", do_sigprocmask, _);
+	//make_builtin("sigpending", do_sigpending, _);
+
+	//make_builtin("sigsuspend", do_sigsuspend, _);
+	make_builtin("pause", do_pause, 0);
+
+	//make_builtin("signalstack", do_signalstack, _);
+	//make_builtin("sigaltstack", do_sigaltstack, _);
 
 	/* make function call instructions */
 	code = bcalloc(Op_func_call, 2, 0);
 	code->func_name = NULL;		/* not needed, func_body will assign */
 	code->nexti = bcalloc(Op_stop, 1, 0);
 
-	for (i = 0; i < SIG_NUM; i++) {
-		// user_handler[i] = NULL;
+	for (i = 0; i < NSIG; i++) {
 		memset(&sig_act[i], 0, sizeof(struct sigaction));
 	}
 

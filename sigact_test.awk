@@ -3,192 +3,192 @@
 # This program available with gawk-4.0.0 or later.
 #
 
-function HUP_handler()
+function HUP_handler(sig)
 {
 	print "HUP_handler called."
 }
 
-function INT_handler()
+function INT_handler(sig)
 {
 	print "INT_handler called."
 }
 
-function QUIT_handler()
+function QUIT_handler(sig)
 {
 	print "QUIT_handler called."
 }
 
-function ILL_handler()
+function ILL_handler(sig)
 {
 	print "ILL_handler called."
 }
 
-function ABRT_handler()
+function ABRT_handler(sig)
 {
 	print "ABRT_handler called."
 }
 
-function FPE_handler()
+function FPE_handler(sig)
 {
 	print "FPE_handler called."
 }
 
-function KILL_handler()
+function KILL_handler(sig)
 {
 	print "KILL_handler called."
 }
 
-function SEGV_handler()
+function SEGV_handler(sig)
 {
 	print "SEGV_handler called."
 }
 
-function PIPE_handler()
+function PIPE_handler(sig)
 {
 	print "PIPE_handler called."
 }
 
-function ALRM_handler()
+function ALRM_handler(sig)
 {
 	print "ALRM_handler called."
 }
 
-function TERM_handler()
+function TERM_handler(sig)
 {
 	print "TERM_handler called."
 }
 
-function USR1_handler()
+function USR1_handler(sig)
 {
 	print "USR1_handler called."
 }
 
-function USR2_handler()
+function USR2_handler(sig)
 {
 	print "USR2_handler called."
 }
 
-function CHLD_handler()
+function CHLD_handler(sig)
 {
 	print "CHLD_handler called."
 }
 
-function CONT_handler()
+function CONT_handler(sig)
 {
 	print "CONT_handler called."
 }
 
-function STOP_handler()
+function STOP_handler(sig)
 {
 	print "STOP_handler called."
 }
 
-function TSTP_handler()
+function TSTP_handler(sig)
 {
 	print "TSTP_handler called."
 }
 
-function TTIN_handler()
+function TTIN_handler(sig)
 {
 	print "TTIN_handler called."
 }
 
-function TTOU_handler()
+function TTOU_handler(sig)
 {
 	print "TTOU_handler called."
 }
 
-function BUS_handler()
+function BUS_handler(sig)
 {
 	print "BUS_handler called."
 }
 
-function POLL_handler()
+function POLL_handler(sig)
 {
 	print "POLL_handler called."
 }
 
-function PROF_handler()
+function PROF_handler(sig)
 {
 	print "PROF_handler called."
 }
 
-function SYS_handler()
+function SYS_handler(sig)
 {
 	print "SYS_handler called."
 }
 
-function TRAP_handler()
+function TRAP_handler(sig)
 {
 	print "TRAP_handler called."
 }
 
-function URG_handler()
+function URG_handler(sig)
 {
 	print "URG_handler called."
 }
 
-function VTALRM_handler()
+function VTALRM_handler(sig)
 {
 	print "VTALRM_handler called."
 }
 
-function XCPU_handler()
+function XCPU_handler(sig)
 {
 	print "XCPU_handler called."
 }
 
-function XFSZ_handler()
+function XFSZ_handler(sig)
 {
 	print "XFSZ_handler called."
 }
 
-function IOT_handler()
+function IOT_handler(sig)
 {
 	print "IOT_handler called."
 }
 
-function EMT_handler()
+function EMT_handler(sig)
 {
 	print "EMT_handler called."
 }
 
-function STKFLT_handler()
+function STKFLT_handler(sig)
 {
 	print "STKFLT_handler called."
 }
 
-function IO_handler()
+function IO_handler(sig)
 {
 	print "IO_handler called."
 }
 
-function CLD_handler()
+function CLD_handler(sig)
 {
 	print "CLD_handler called."
 }
 
-function PWR_handler()
+function PWR_handler(sig)
 {
 	print "PWR_handler called."
 }
 
-function INFO_handler()
+function INFO_handler(sig)
 {
 	print "INFO_handler called."
 }
 
-function LOST_handler()
+function LOST_handler(sig)
 {
 	print "LOST_handler called."
 }
 
-function WINCH_handler()
+function WINCH_handler(sig)
 {
 	print "WINCH_handler called."
 }
 
-function UNUSED_handler()
+function UNUSED_handler(sig)
 {
 	print "UNUSED_handler called."
 }
@@ -210,7 +210,7 @@ BEGIN {
 	sigact("USR2", "USR2_handler")
 	sigact("CHLD", "CHLD_handler")
 	sigact("CONT", "CONT_handler")
-	#?sigact("STOP", "STOP_handler")
+	sigact("STOP", "STOP_handler")
 	sigact("TSTP", "TSTP_handler")
 	sigact("TTIN", "TTIN_handler")
 	sigact("TTOU", "TTOU_handler")
