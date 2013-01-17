@@ -14,25 +14,100 @@
 int plugin_is_GPL_compatible;
 
 
-static NODE *user_handler[NSIG];
-static struct sigaction sig_act[NSIG];
+typedef struct {
+	int sig_no;
+	const char *sig_name;
+	NODE *user_handler;
+} SigTable;
+
+SigTable sig_table[] = {
+  /* POSIX.1-1990 */
+	{ SIGHUP,	"HUP",	NULL },
+	{ SIGINT,	"INT",	NULL },
+	{ SIGQUIT,	"QUIT",	NULL },
+	{ SIGILL,	"ILL",	NULL },
+	{ SIGABRT,	"ABRT",	NULL },
+	{ SIGFPE,	"FPE",	NULL },
+	{ SIGKILL,	"KILL",	NULL },
+	{ SIGSEGV,	"SEGV",	NULL },
+	{ SIGPIPE,	"PIPE",	NULL },
+	{ SIGALRM,	"ALRM",	NULL },
+	{ SIGTERM,	"TERM",	NULL },
+	{ SIGUSR1,	"USR1",	NULL },
+	{ SIGUSR2,	"USR2",	NULL },
+	{ SIGCHLD,	"CHLD",	NULL },
+	{ SIGCONT,	"CONT",	NULL },
+	{ SIGSTOP,	"STOP",	NULL },
+	{ SIGTSTP,	"TSTP",	NULL },
+	{ SIGTTIN,	"TTIN",	NULL },
+	{ SIGTTOU,	"TTOU",	NULL },
+  /* SUSv2 & POSIX.1-2001 */
+	{ SIGBUS,	"BUS",	NULL },
+	{ SIGPOLL,	"POLL",	NULL },
+	{ SIGPROF,	"PROF",	NULL },
+	{ SIGSYS,	"SYS",	NULL },
+	{ SIGTRAP,	"TRAP",	NULL },
+	{ SIGURG,	"URG",	NULL },
+	{ SIGVTALRM,	"VTALRM",	NULL },
+	{ SIGXCPU,	"XCPU",	NULL },
+	{ SIGXFSZ,	"XFSZ",	NULL },
+  /* Others */
+// ?	{ SIGIOT,	"IOT",	NULL },	same ABRT (BSD)
+//	{ SIGEMT,	"EMT",	NULL },
+	{ SIGSTKFLT,	"STKFLT",	NULL },
+	{ SIGIO,	"IO",	NULL },
+// ?	{ SIGCLD,	"CLD",	NULL },	same CHLD
+	{ SIGPWR,	"PWR",	NULL },
+//	{ SIGINFO,	"INFO",	NULL },
+//	{ SIGLOST,	"LOST",	NULL },
+	{ SIGWINCH,	"WINCH",	NULL },
+	{ SIGUNUSED,	"UNUSED",	NULL },
+  /* pid check only */
+	{ 0,	"NULL",	NULL },
+};
 
 
-static INSTRUCTION *code;
+static void handler(int signo);
+static SigTable * sig2ptr(int sig);
+static int str2sig(const char *str);
+static int num2sig(int num);
+static int get_signo(NODE *tmp);
+static int ana_mask(sigset_t *mask, int arg_number);
+static int ret_mask(sigset_t *mask, int arg_number);
+static NODE * kill_killpg(int (*func)(int, int));
+static NODE * do_kill(int nargs);
+static NODE * do_killpg(int nargs);
+static NODE * do_raise(int nargs);
+static NODE * do_signal(int nargs);
+static int ana_flags(int arg_number);
+static int str2flag(const char *str);
+static NODE * do_sigprocmask(int nargs);
+static int str2how(const char *str);
+static NODE * do_sigpending(int nargs);
+static NODE * do_pause(int nargs);
+static NODE * do_sigsuspend(int nargs);
+static NODE * do_alarm(int nargs);
+NODE * dlload(NODE *tree, void *dl);
+
 
 static void
 handler(int signo)
 {
+	SigTable *sig_tbl;
 	AWKNUM ret;
+	static INSTRUCTION *code;
 	extern int currule;
 	extern int exiting;
 
-	code->func_body = user_handler[signo];
-	(code + 1)->expr_count = 1;	/* function takes one argument */
+	sig_tbl = sig2ptr(signo);
 
-#ifdef DBG
-	printf("%d %p\n", signo, code->func_body);
-#endif
+	/* make function call instructions */
+	code = bcalloc(Op_func_call, 2, 0);
+	code->func_name = NULL;		/* not needed, func_body will assign */
+	code->nexti = bcalloc(Op_stop, 1, 0);
+
+	code->func_body = sig_tbl->user_handler;
+	(code + 1)->expr_count = 1;	/* function takes one argument */
 
 	/* make non-local jumps `next' and `nextfile' fatal in
 	 * callback function by setting currule in interpret()
@@ -51,103 +126,41 @@ handler(int signo)
 	POP_NUMBER(ret);
 
 	currule = (code + 1)->inrule;   /* restore current rule */
+	bcfree(code->nexti);            /* Op_stop */
+	bcfree(code);                   /* Op_func_call */
+
 	return;
 }
 
-#if 0
-// void (*sa_sigaction)(int, siginfo_t *, void *);
-void *
-action(int signo, siginfo_t *siginfo, void *context)
+static SigTable *
+sig2ptr(int sig)
 {
+	int i;
+
+	for (i = 0; i < sizeof(sig_table) / sizeof(SigTable); i++) {
+		if (sig == sig_table[i].sig_no) {
+			return &sig_table[i];
+		}
+	}
+
 	return NULL;
 }
-#endif
 
 static int
 str2sig(const char *str)
 {
+	int i;
 	int sig = 0;
 
 	if (strncmp(str, "SIG", 3) == 0) {
 		str += 3;
 	}
 
-	if (strcmp(str, "HUP") == 0) {
-		sig = SIGHUP;
-	} else if (strcmp(str, "INT") == 0) {
-		sig = SIGINT;
-	} else if (strcmp(str, "QUIT") == 0) {
-		sig = SIGQUIT;
-	} else if (strcmp(str, "ILL") == 0) {
-		sig = SIGILL;
-	} else if (strcmp(str, "ABRT") == 0) {
-		sig = SIGABRT;
-	} else if (strcmp(str, "FPE") == 0) {
-		sig = SIGFPE;
-	} else if (strcmp(str, "KILL") == 0) {
-		sig = SIGKILL;
-	} else if (strcmp(str, "SEGV") == 0) {
-		sig = SIGSEGV;
-	} else if (strcmp(str, "PIPE") == 0) {
-		sig = SIGPIPE;
-	} else if (strcmp(str, "ALRM") == 0) {
-		sig = SIGALRM;
-	} else if (strcmp(str, "TERM") == 0) {
-		sig = SIGTERM;
-	} else if (strcmp(str, "USR1") == 0) {
-		sig = SIGUSR1;
-	} else if (strcmp(str, "USR2") == 0) {
-		sig = SIGUSR2;
-	} else if (strcmp(str, "CHLD") == 0) {
-		sig = SIGCHLD;
-	} else if (strcmp(str, "CONT") == 0) {
-		sig = SIGCONT;
-	} else if (strcmp(str, "STOP") == 0) {
-		sig = SIGSTOP;
-	} else if (strcmp(str, "TSTP") == 0) {
-		sig = SIGTSTP;
-	} else if (strcmp(str, "TTIN") == 0) {
-		sig = SIGTTIN;
-	} else if (strcmp(str, "TTOU") == 0) {
-		sig = SIGTTOU;
-	} else if (strcmp(str, "BUS") == 0) {
-		sig = SIGBUS;
-	} else if (strcmp(str, "POLL") == 0) {
-		sig = SIGPOLL;
-	} else if (strcmp(str, "PROF") == 0) {
-		sig = SIGPROF;
-	} else if (strcmp(str, "SYS") == 0) {
-		sig = SIGSYS;
-	} else if (strcmp(str, "TRAP") == 0) {
-		sig = SIGTRAP;
-	} else if (strcmp(str, "URG") == 0) {
-		sig = SIGURG;
-	} else if (strcmp(str, "VTALRM") == 0) {
-		sig = SIGVTALRM;
-	} else if (strcmp(str, "XCPU") == 0) {
-		sig = SIGXCPU;
-	} else if (strcmp(str, "XFSZ") == 0) {
-		sig = SIGXFSZ;
-	} else if (strcmp(str, "IOT") == 0) {
-		sig = SIGIOT;
-	//} else if (strcmp(str, "EMT") == 0) {
-		//sig = SIGEMT;
-	} else if (strcmp(str, "STKFLT") == 0) {
-		sig = SIGSTKFLT;
-	} else if (strcmp(str, "IO") == 0) {
-		sig = SIGIO;
-	} else if (strcmp(str, "CLD") == 0) {
-		sig = SIGCLD;
-	} else if (strcmp(str, "PWR") == 0) {
-		sig = SIGPWR;
-	//} else if (strcmp(str, "INFO") == 0) {
-		//sig = SIGINFO;
-	//} else if (strcmp(str, "LOST") == 0) {
-		//sig = SIGLOST;
-	} else if (strcmp(str, "WINCH") == 0) {
-		sig = SIGWINCH;
-	} else if (strcmp(str, "UNUSED") == 0) {
-		sig = SIGUNUSED;
+	for (i = 0; i < sizeof(sig_table) / sizeof(SigTable); i++) {
+		if (strcmp(str, sig_table[i].sig_name) == 0) {
+			sig = sig_table[i].sig_no;
+			return sig;
+		}
 	}
 
 	return sig;
@@ -156,48 +169,14 @@ str2sig(const char *str)
 static int
 num2sig(int num)
 {
+	int i;
 	int sig = 0;
 
-	switch (num) {
-	case SIGHUP:
-	case SIGINT:
-	case SIGQUIT:
-	case SIGILL:
-	case SIGABRT:
-	case SIGFPE:
-	case SIGKILL:
-	case SIGSEGV:
-	case SIGPIPE:
-	case SIGALRM:
-	case SIGTERM:
-	case SIGUSR1:
-	case SIGUSR2:
-	case SIGCHLD:
-	case SIGCONT:
-	case SIGSTOP:
-	case SIGTSTP:
-	case SIGTTIN:
-	case SIGTTOU:
-	case SIGBUS:
-	case SIGPOLL:
-	case SIGPROF:
-	case SIGSYS:
-	case SIGTRAP:
-	case SIGURG:
-	case SIGVTALRM:
-	case SIGXCPU:
-	case SIGXFSZ:
-	//?case SIGIOT:
-	//case SIGEMT:
-	case SIGSTKFLT:
-	//?case SIGIO:
-	//?case SIGCLD:
-	case SIGPWR:
-	//case SIGINFO:
-	//case SIGLOST:
-	case SIGWINCH:
-	//?case SIGUNUSED:
-		sig = num;
+	for (i = 0; i < sizeof(sig_table) / sizeof(SigTable); i++) {
+		if (num == sig_table[i].sig_no) {
+			sig = sig_table[i].sig_no;
+			return sig;
+		}
 	}
 
 	return sig;
@@ -221,6 +200,76 @@ get_signo(NODE *tmp)
 	}
 
 	return sig;
+}
+
+static int
+ana_mask(sigset_t *mask, int arg_number)
+{
+	NODE *tmp, *array, *elm, *name, *value;
+	int i;
+	int sig;
+
+	sigemptyset(mask);
+
+	array = (NODE *) get_array_argument(arg_number, FALSE);
+	if ( array != NULL ) {
+		for (i = 0; i < array->array_size; i++) {
+			for (elm = array->var_array[i]; elm != NULL; elm = elm->ahnext) {
+				sig = str2sig(elm->hname);
+				if (sig) {
+					value = elm->hvalue;
+					force_string(value);
+					if (value->stptr[0] != '0' && value->stptr[0] != '\0') {
+						sigaddset(mask, sig);
+					}
+				}
+			}
+		}
+	} else {
+		tmp = (NODE *) get_scalar_argument(arg_number, FALSE);
+		if (strcmp(tmp->stptr, "@all") == 0) {	// toupper TODO	@FILL
+			sigfillset(mask);
+		} else if (strcmp(tmp->stptr, "@empty") == 0) {	// TODO
+			sigemptyset(mask);
+		} else {
+			
+		}
+	}
+
+	return 0;
+}
+
+static int
+ret_mask(sigset_t *mask, int arg_number)
+{
+	// TODO;
+	NODE *tmp, *array, *elm, *value;
+	int i;
+	int sig;
+
+	array = (NODE *) get_array_argument(arg_number, FALSE);
+	if ( array != NULL ) {
+#if 0
+		for (i = 0; i < array->array_size; i++) {
+			for (elm = array->var_array[i]; elm != NULL; elm = elm->ahnext) {
+				name = elm->hname;
+				force_string(name);
+				sig = str2sig(name->stptr);
+				if (sig) {
+					value = elm->hvalue;
+					force_string(value);
+					if (value->stptr[0] != '0' && value->stptr[0] != '\0') {
+						sigaddset(mask, sig);
+					}
+				}
+			}
+		}
+#endif
+	} else {
+		tmp = (NODE *) get_scalar_argument(arg_number, FALSE);
+	}
+
+	return 0;
 }
 
 static NODE *
@@ -273,22 +322,30 @@ do_raise(int nargs)
 }
 
 static NODE *
-do_sigact(int nargs)
+do_signal(int nargs)
 {
 	NODE *tmp;
 	const char *str;
 	int sig;
 	NODE *fnc_ptr;
+	SigTable *sig_tbl;
+	struct sigaction sig_act;
 
-	if (do_lint && get_curfunc_arg_count() > 2)
-		lintwarn("sigact: called with too many arguments");
+	if (do_lint && get_curfunc_arg_count() > 4)
+		lintwarn("signal: called with too many arguments");
 
+	memset(&sig_act, 0, sizeof(struct sigaction));
+
+	/* signal number */
 	tmp = (NODE *) get_scalar_argument(0, FALSE);
 	sig = get_signo(tmp);
 
+	/* signal handler */
 	tmp = (NODE *) get_scalar_argument(1, FALSE);
 	force_string(tmp);
 	str = tmp->stptr;
+
+	sig_tbl = sig2ptr(sig);
 
 	if (str[0] == '@') {
 		str++;	/* advance '@' */
@@ -300,40 +357,157 @@ do_sigact(int nargs)
 		}
 
 		if (strcmp(str, "DFL") == 0) {
-			fnc_ptr = SIG_DFL;
+			sig_act.sa_handler = SIG_DFL;
 		} else if (strcmp(str, "IGN") == 0) {
-			fnc_ptr = SIG_IGN;
+			sig_act.sa_handler = SIG_IGN;
 		} else {
-			fnc_ptr = NULL;
+			//TODO sig_act.sa_handler = SIG_IGN; fatal
 		}
+		sig_tbl->user_handler = NULL;
 	} else {
 		fnc_ptr = lookup(str);
+		sig_tbl->user_handler = fnc_ptr;
+		sig_act.sa_handler = handler;
 	}
 
 	if (fnc_ptr == NULL || fnc_ptr->type != Node_func)
 		fatal(_("Callback function `%s' is not defined"), tmp->stptr);
 
-	user_handler[sig] = fnc_ptr;
+	/* mask */
+	if (get_curfunc_arg_count() >= 3)
+		ana_mask(&sig_act.sa_mask, 2);
+	else
+		sigfillset(&sig_act.sa_mask);
 
-	sig_act[sig].sa_handler = handler;
-	sig_act[sig].sa_flags |= SA_RESTART;    /* システムコールが中止しない */
+	/* flags */
+	if (get_curfunc_arg_count() >= 4)
+		sig_act.sa_flags = ana_flags(3);
+	else
+		sig_act.sa_flags |= SA_RESTART;    /* システムコールが中止しない */
 
-#ifdef DBG
-	printf("%d %p\n", sig, fnc_ptr);
-#endif
+	return make_number((AWKNUM) sigaction(sig, &sig_act, NULL));
+}
 
-	return make_number((AWKNUM) sigaction(sig, &sig_act[sig], NULL));
+static int
+ana_flags(int arg_number)
+{
+	NODE *tmp, *array, *elm, *value;
+	int i;
+	int flag;
+	int flags = 0;
+
+	array = (NODE *) get_array_argument(arg_number, FALSE);
+	if ( array != NULL ) {
+		for (i = 0; i < array->array_size; i++) {
+			for (elm = array->var_array[i]; elm != NULL; elm = elm->ahnext) {
+				flag = str2flag(elm->hname);
+				if (flag) {
+					value = elm->hvalue;
+					force_string(value);
+					if (value->stptr[0] != '0' && value->stptr[0] != '\0') {
+						flags |= flag;
+					}
+				}
+			}
+		}
+	} else {
+		tmp = (NODE *) get_scalar_argument(arg_number, FALSE);
+		if (tmp->stptr[0] == '\0') {
+			flags |= SA_RESTART;    /* システムコールが中止しない */
+		} else {
+			//TODO;
+		}
+	}
+
+	return 0;
+}
+
+static int
+str2flag(const char *str)
+{
+	int flag;
+
+	if (strncmp(str, "SA_", 3) == 0) {
+		str += 3;
+	}
+
+	if (strcmp(str, "NOCLDSTOP") == 0) {
+		flag = SA_NOCLDSTOP;
+	} else if (strcmp(str, "NOCLDWAIT") == 0) {
+		flag = SA_NOCLDWAIT;
+	} else if (strcmp(str, "NODEFER") == 0) {
+		flag = SA_NODEFER;
+	} else if (strcmp(str, "RESTART") == 0) {
+		flag = SA_RESTART;
+	} else if (strcmp(str, "RESETHAND") == 0) {
+		flag = SA_RESETHAND;
+	} else {
+		flag = 0;
+	}
+
+	return flag;
 }
 
 static NODE *
-do_sigaction(int nargs)
+do_sigprocmask(int nargs)
 {
-	if (do_lint && get_curfunc_arg_count() > 4)
-		lintwarn("sigaction: called with too many arguments");
+	NODE *tmp;
+	int how;
+	sigset_t mask;
+	sigset_t old;
+	int ret;
 
-	// TODO
+	if (do_lint && get_curfunc_arg_count() > 1)
+		lintwarn("sigsuspend: called with too many arguments");
 
-	return make_number((AWKNUM) pause());
+	tmp = (NODE *) get_scalar_argument(0, FALSE);
+	force_string(tmp);
+	how = str2how(tmp->stptr);
+
+	ana_mask(&mask, 1);
+
+	ret = sigprocmask(how, &mask, &old);
+
+	ret_mask(&mask, 2);
+
+	return make_number((AWKNUM) ret);
+}
+
+static int
+str2how(const char *str)
+{
+	int how;
+
+	if (strncmp(str, "SIG", 3) == 0) {
+		str += 3;
+	}
+	if (strncmp(str, "_", 1) == 0) {
+		str += 1;
+	}
+
+	if (strcmp(str, "BLOCK") == 0) {
+		how = SIG_BLOCK;
+	} else if (strcmp(str, "UNBLOCK") == 0) {
+		how = SIG_UNBLOCK;
+	} else if (strcmp(str, "SETMASK") == 0) {
+		how = SIG_SETMASK;
+	}
+
+	return how;
+}
+
+static NODE *
+do_sigpending(int nargs)
+{
+	sigset_t mask;
+
+	if (do_lint && get_curfunc_arg_count() > 1)
+		lintwarn("sigpending: called with too many arguments");
+
+	sigpending(&mask);
+	ret_mask(&mask, 0);
+
+	return make_number((AWKNUM) 0);
 }
 
 static NODE *
@@ -345,42 +519,56 @@ do_pause(int nargs)
 	return make_number((AWKNUM) pause());
 }
 
+static NODE *
+do_sigsuspend(int nargs)
+{
+	sigset_t mask;
+
+	if (do_lint && get_curfunc_arg_count() > 1)
+		lintwarn("sigsuspend: called with too many arguments");
+
+	ana_mask(&mask, 0);
+
+	return make_number((AWKNUM) sigsuspend(&mask));
+}
+
+static NODE *
+do_alarm(int nargs)
+{
+	NODE *tmp;
+	unsigned int second;
+
+	if (do_lint && get_curfunc_arg_count() > 1)
+		lintwarn("alarm: called with too many arguments");
+
+	tmp = (NODE *) get_scalar_argument(0, FALSE);
+	second = (unsigned int) force_number(tmp);
+
+	return make_number((AWKNUM) alarm(second));
+}
+
 NODE *
 dlload(NODE *tree, void *dl)
 {
-	int i;
-
 	make_builtin("kill", do_kill, 2);
 	make_builtin("killpg", do_killpg, 2);
-	//make_builtin("tgkill", do_tgkill, _);
 	make_builtin("raise", do_raise, 1);
 
-	make_builtin("sigact", do_sigact, 2);
-	make_builtin("sigaction", do_sigaction, 4);
+	make_builtin("signal", do_signal, 4);
 
-	//make_builtin("sigaddset", do_sigaddset, _);
-	//make_builtin("sigdelset", do_sigdelset, _);
-	//make_builtin("sigismember", do_ismember, _);
-	//make_builtin("sigfillset", do_sigfillset, _);
-	//make_builtin("sigemptyset", do_sigemptyset, _);
+	//make_builtin("sigaddset", do_sigaddset, 2);
+	//make_builtin("sigdelset", do_sigdelset, 2);
+	//make_builtin("sigismember", do_ismember, 2);
+	//make_builtin("sigfillset", do_sigfillset, 1);
+	//make_builtin("sigemptyset", do_sigemptyset, 1);
 
-	//make_builtin("sigprocmask", do_sigprocmask, _);
-	//make_builtin("sigpending", do_sigpending, _);
+	make_builtin("sigprocmask", do_sigprocmask, 3);
+	make_builtin("sigpending", do_sigpending, 1);
 
-	//make_builtin("sigsuspend", do_sigsuspend, _);
 	make_builtin("pause", do_pause, 0);
+	make_builtin("sigsuspend", do_sigsuspend, 1);
 
-	//make_builtin("signalstack", do_signalstack, _);
-	//make_builtin("sigaltstack", do_sigaltstack, _);
-
-	/* make function call instructions */
-	code = bcalloc(Op_func_call, 2, 0);
-	code->func_name = NULL;		/* not needed, func_body will assign */
-	code->nexti = bcalloc(Op_stop, 1, 0);
-
-	for (i = 0; i < NSIG; i++) {
-		memset(&sig_act[i], 0, sizeof(struct sigaction));
-	}
+	make_builtin("alarm", do_alarm, 1);
 
 	return make_number((AWKNUM) 0);
 }
