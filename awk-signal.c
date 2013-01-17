@@ -96,7 +96,6 @@ handler(int signo)
 	SigTable *sig_tbl;
 	AWKNUM ret;
 	static INSTRUCTION *code;
-	extern int currule;
 	extern int exiting;
 
 	sig_tbl = sig2ptr(signo);
@@ -109,14 +108,6 @@ handler(int signo)
 	code->func_body = sig_tbl->user_handler;
 	(code + 1)->expr_count = 1;	/* function takes one argument */
 
-	/* make non-local jumps `next' and `nextfile' fatal in
-	 * callback function by setting currule in interpret()
-	 * to undefined (0). `exit' is handled in user_func.
-	 */
-
-	(code + 1)->inrule = currule;	/* save current rule */
-	currule = 0;
-
 	PUSH(make_number((AWKNUM) signo));
 
 	interpret(code);
@@ -125,7 +116,6 @@ handler(int signo)
 
 	POP_NUMBER(ret);
 
-	currule = (code + 1)->inrule;   /* restore current rule */
 	bcfree(code->nexti);            /* Op_stop */
 	bcfree(code);                   /* Op_func_call */
 
