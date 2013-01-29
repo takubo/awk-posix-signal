@@ -33,7 +33,7 @@ function CHLD_handler(sig) { print "CHLD_handler called." }
 
 function CONT_handler(sig) { print "CONT_handler called." }
 
-function STOP_handler(sig) { print "STOP_handler called." }
+function STOP_handler(sig) { print "STOP_handler called."; raise("KILL") }
 
 function TSTP_handler(sig) { print "TSTP_handler called." }
 
@@ -80,6 +80,8 @@ function WINCH_handler(sig) { print "WINCH_handler called." }
 function UNUSED_handler(sig) { print "UNUSED_handler called." }
 
 BEGIN {
+	time = 0.5
+
 	extension("./awk-signal.so", "dlload")
 
 	signal("HUP", "HUP_handler")
@@ -121,6 +123,45 @@ BEGIN {
 	signal("WINCH", "WINCH_handler")
 	signal("UNUSED", "UNUSED_handler")
 
-	for ( ; ; );
-	#for ( ; ; ){print "looping...";system("sleep 0.1")}
+	raise("HUP");	system("sleep " time)
+	raise("INT");	system("sleep " time)
+	raise("QUIT");	system("sleep " time)
+	raise("ILL");	system("sleep " time)
+	raise("ABRT");	system("sleep " time)
+	raise("FPE");	system("sleep " time)
+	#?raise("KILL");	system("sleep " time)
+	raise("SEGV");	system("sleep " time)
+	raise("PIPE");	system("sleep " time)
+	raise("ALRM");	system("sleep " time)
+	raise("TERM");	system("sleep " time)
+	raise("USR1");	system("sleep " time)
+	raise("USR2");	system("sleep " time)
+	raise("CHLD");	system("sleep " time)
+	raise("CONT");	system("sleep " time)
+	#?raise("STOP");	system("sleep " time)
+	raise("TSTP");	system("sleep " time)
+	raise("TTIN");	system("sleep " time)
+	raise("TTOU");	system("sleep " time)
+	raise("BUS");	system("sleep " time)
+	raise("POLL");	system("sleep " time)
+	raise("PROF");	system("sleep " time)
+	raise("SYS");	system("sleep " time)
+	raise("TRAP");	system("sleep " time)
+	raise("URG");	system("sleep " time)
+	raise("VTALRM");	system("sleep " time)
+	raise("XCPU");	system("sleep " time)
+	raise("XFSZ");	system("sleep " time)
+	#raise("IOT");	system("sleep " time)
+	#raise("EMT");	system("sleep " time)
+	raise("STKFLT");	system("sleep " time)
+	raise("IO");	system("sleep " time)
+	#raise("CLD");	system("sleep " time)
+	raise("PWR");	system("sleep " time)
+	#raise("INFO");	system("sleep " time)
+	#raise("LOST");	system("sleep " time)
+	raise("WINCH");	system("sleep " time)
+	raise("UNUSED");	system("sleep " time)
+
+	raise("KILL");	system("sleep " time)
+	raise("STOP");	system("sleep " time) # do not execute this line
 }
